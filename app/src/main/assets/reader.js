@@ -78,25 +78,26 @@
 
   var WORD = /[\p{L}\p{N}\p{M}'’­-]/u;
 
-  // Word under a long-press (device pixels). Marks it and returns it.
+  // Word under a long-press (device pixels). Marks it and returns {w, top, bottom} in device pixels.
   IL.wordAt = function (x, y) {
     var r = window.devicePixelRatio || 1;
     x /= r; y /= r;
     var range = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
-    if (!range || range.startContainer.nodeType !== 3) return '';
+    if (!range || range.startContainer.nodeType !== 3) return null;
     var node = range.startContainer, t = node.nodeValue, i = range.startOffset;
     if (i < t.length && !WORD.test(t.charAt(i)) && i > 0 && WORD.test(t.charAt(i - 1))) i--;
-    if (i >= t.length || !WORD.test(t.charAt(i))) return '';
+    if (i >= t.length || !WORD.test(t.charAt(i))) return null;
     var s = i, e = i;
     while (s > 0 && WORD.test(t.charAt(s - 1))) s--;
     while (e < t.length && WORD.test(t.charAt(e))) e++;
     while (s < e && /['’\-]/.test(t.charAt(s))) s++;
     while (e > s && /['’\-]/.test(t.charAt(e - 1))) e--;
     var w = t.substring(s, e).replace(/­/g, '');
-    if (!w) return '';
+    if (!w) return null;
     IL.clearMark();
-    wrap(node, s, e);
-    return w;
+    var sp = wrap(node, s, e);
+    var rc = sp ? sp.getBoundingClientRect() : { top: y, bottom: y };
+    return { w: w, top: rc.top * r, bottom: rc.bottom * r };
   };
 
   // Jump to the nth (0-based) match of a search, matching BookSearch.java's numbering.
@@ -160,6 +161,85 @@
     return out;
   };
 
+
+  // ---- keep sentences together: end each page at a sentence (or paragraph) boundary ----
+  var SENT_END = /[.!?…]['"”’»)\]]*(?=\s|$)/g;
+  var ENDS_SENTENCE = /[.!?…]['"”’»)\]]*$/;
+
+  function blockOf(n) {
+    var el = n.nodeType === 3 ? n.parentNode : n;
+    while (el && el !== document.body) {
+      var d = getComputedStyle(el).display;
+      if (d !== 'inline' && d !== 'contents') return el;
+      el = el.parentNode;
+    }
+    return document.body;
+  }
+
+  function removeBreaks() {
+    var b = document.querySelectorAll('span.ilbreak');
+    for (var i = 0; i < b.length; i++) { var p = b[i].parentNode; p.removeChild(b[i]); p.normalize(); }
+    var k = document.querySelectorAll('.ilbreakblk');
+    for (var j = 0; j < k.length; j++) { k[j].style.removeProperty('break-before'); k[j].classList.remove('ilbreakblk'); }
+  }
+
+  function keepSentences() {
+    removeBreaks();
+    if (!InkLeaf.keepSentences() || !document.caretRangeFromPoint) return;
+    var cs = getComputedStyle(document.body);
+    var padL = parseFloat(cs.paddingLeft) || 0, padT = parseFloat(cs.paddingTop) || 0;
+    var H = document.documentElement.clientHeight || window.innerHeight;
+    measure();
+    for (var p = 0; p < IL.count - 1 && p < 1000; p++) {
+      // Where does page p+1 start?
+      window.scrollTo((p + 1) * IL.W, 0);
+      var r = document.caretRangeFromPoint(padL + 2, padT + 6);
+      if (!r || r.startContainer.nodeType !== 3) continue;
+      var node = r.startContainer, off = r.startOffset, block = blockOf(node);
+      // Text of that paragraph up to the page break.
+      var tw = document.createTreeWalker(block, NodeFilter.SHOW_TEXT), nodes = [], starts = [], lens = [], text = '', n;
+      while ((n = tw.nextNode())) {
+        var piece = n === node ? n.nodeValue.substring(0, off) : n.nodeValue;
+        nodes.push(n); starts.push(text.length); lens.push(piece.length); text += piece;
+        if (n === node) break;
+      }
+      if (nodes[nodes.length - 1] !== node) continue;
+      var before = text.replace(/\s+$/, '');
+      if (!before.trim() || ENDS_SENTENCE.test(before)) continue; // already at a paragraph or sentence start
+      var last = -1, m;
+      SENT_END.lastIndex = 0;
+      while ((m = SENT_END.exec(before))) last = m.index + m[0].length;
+      window.scrollTo(p * IL.W, 0);
+      var done = false;
+      if (last > 0) {
+        var k = 0;
+        while (k < nodes.length - 1 && last > starts[k] + lens[k]) k++;
+        var tn = nodes[k], to = last - starts[k];
+        var rg = document.createRange();
+        rg.setStart(tn, Math.max(0, to - 1)); rg.setEnd(tn, to);
+        var rc = rg.getBoundingClientRect();
+        // Only if that sentence ends on this page and the page stays at least half full.
+        if (rc.left >= 0 && rc.left < IL.W && rc.bottom > H * 0.5) {
+          var rest = tn.splitText(to);
+          var br = document.createElement('span');
+          br.className = 'ilbreak';
+          rest.parentNode.insertBefore(br, rest);
+          done = true;
+        }
+      }
+      if (!done && block !== document.body) {
+        // The sentence began with this paragraph: move the whole paragraph if it starts low on this page.
+        var first = block.getClientRects()[0];
+        if (first && first.left >= 0 && first.left < IL.W && first.top > H * 0.5) {
+          block.style.setProperty('break-before', 'column', 'important');
+          block.classList.add('ilbreakblk');
+        }
+      }
+      measure();
+    }
+    window.scrollTo(0, 0);
+  }
+
   // Turn justified text into left-aligned text, but leave centred/right-aligned text alone.
   function fixAlignment() {
     if (!InkLeaf.leftAlign()) return;
@@ -174,6 +254,7 @@
 
   function start() {
     fixAlignment();
+    keepSentences();
     measure();
     var s = InkLeaf.start();
     IL.ready = true;
@@ -194,6 +275,6 @@
   window.addEventListener('resize', function () {
     if (!IL.ready) return;
     var f = IL.page / IL.count;
-    setTimeout(function () { measure(); IL.go(Math.floor(f * IL.count + 0.0001)); }, 50);
+    setTimeout(function () { keepSentences(); measure(); IL.go(Math.floor(f * IL.count + 0.0001)); }, 50);
   });
 })();

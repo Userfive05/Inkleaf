@@ -22,6 +22,8 @@ public class Prefs {
     public void noHyphens(boolean v) { p.edit().putBoolean("noHyphens", v).apply(); }
     public boolean leftAlign() { return p.getBoolean("leftAlign", true); }
     public void leftAlign(boolean v) { p.edit().putBoolean("leftAlign", v).apply(); }
+    public boolean keepSentences() { return p.getBoolean("keepSentences", true); }
+    public void keepSentences(boolean v) { p.edit().putBoolean("keepSentences", v).apply(); }
 
     // Front light (used when the app can't write the system setting)
     public int lightOr(int def) { return p.getInt("light", def); }

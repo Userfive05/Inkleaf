@@ -64,6 +64,7 @@ public class ReaderActivity extends Activity {
     WebView web;
     LinearLayout menu, panel;
     LinearLayout dictPanel;
+    View dictLineTop, dictLineBottom;
     WebView dictWeb;
     TextView dictWord, clock;
     String currentWord = "";
@@ -192,8 +193,7 @@ public class ReaderActivity extends Activity {
         lightToast.setVisibility(View.GONE);
         root.addView(lightToast, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
 
-        root.addView(buildDictPanel(), new FrameLayout.LayoutParams(-1,
-                Math.round(getResources().getDisplayMetrics().heightPixels * 0.45f), Gravity.BOTTOM));
+        root.addView(buildDictPanel(), new FrameLayout.LayoutParams(-1, -1, Gravity.BOTTOM));
         root.addView(buildMenu(), new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
         setContentView(root);
         setupTouch();
@@ -264,6 +264,9 @@ public class ReaderActivity extends Activity {
         CheckBox left = check("Left-align text (no justified spacing)", prefs.leftAlign());
         left.setOnCheckedChangeListener((b, on) -> { prefs.leftAlign(on); restyle(); });
         panel.addView(left);
+        CheckBox keep = check("End pages at a sentence (never mid-sentence)", prefs.keepSentences());
+        keep.setOnCheckedChangeListener((b, on) -> { prefs.keepSentences(on); restyle(); });
+        panel.addView(keep);
 
         LinearLayout upd = row();
         upd.setPadding(0, dp(8), 0, 0);
@@ -358,6 +361,7 @@ public class ReaderActivity extends Activity {
     class Bridge {
         @JavascriptInterface public String start() { return startPos; }
         @JavascriptInterface public boolean leftAlign() { return prefs.leftAlign(); }
+        @JavascriptInterface public boolean keepSentences() { return prefs.keepSentences(); }
         @JavascriptInterface public void onPage(int p, int c) {
             ui.post(() -> {
                 page = p;
@@ -518,9 +522,9 @@ public class ReaderActivity extends Activity {
         dictPanel.setVisibility(View.GONE);
         dictPanel.setClickable(true);
 
-        View line = new View(this);
-        line.setBackgroundColor(Color.BLACK);
-        dictPanel.addView(line, new LinearLayout.LayoutParams(-1, dp(2)));
+        dictLineTop = new View(this);
+        dictLineTop.setBackgroundColor(Color.BLACK);
+        dictPanel.addView(dictLineTop, new LinearLayout.LayoutParams(-1, dp(2)));
 
         LinearLayout head = row();
         head.setPadding(dp(14), dp(8), dp(8), dp(4));
@@ -542,15 +546,52 @@ public class ReaderActivity extends Activity {
                 return true;
             }
         });
+        dictWeb.setVerticalScrollBarEnabled(true);
+        dictWeb.setScrollbarFadingEnabled(false); // keep the scrollbar visible so long entries look scrollable
+        dictWeb.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
         dictPanel.addView(dictWeb, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        dictLineBottom = new View(this);
+        dictLineBottom.setBackgroundColor(Color.BLACK);
+        dictLineBottom.setVisibility(View.GONE);
+        dictPanel.addView(dictLineBottom, new LinearLayout.LayoutParams(-1, dp(2)));
         return dictPanel;
     }
 
     void lookupAt(float x, float y) {
         web.evaluateJavascript("IL.wordAt(" + x + "," + y + ")", r -> {
-            String w = jsString(r);
-            if (!w.isEmpty()) showDefinition(w);
+            if (r == null || !r.startsWith("{")) return;
+            try {
+                JSONObject o = new JSONObject(r);
+                String w = o.optString("w");
+                if (w.isEmpty()) return;
+                placeDict((float) o.optDouble("top", y), (float) o.optDouble("bottom", y));
+                showDefinition(w);
+            } catch (Exception ignored) { }
         });
+    }
+
+    /**
+     * Sizes the dictionary to one third of the screen and puts it at the bottom, unless that would
+     * cover the selected word (top/bottom in WebView pixels); then it goes at the top.
+     */
+    void placeDict(float wordTop, float wordBottom) {
+        View root = (View) dictPanel.getParent();
+        int screenH = root.getHeight() > 0 ? root.getHeight() : getResources().getDisplayMetrics().heightPixels;
+        int panelH = screenH / 3;
+        int[] webPos = new int[2], rootPos = new int[2];
+        web.getLocationInWindow(webPos);
+        root.getLocationInWindow(rootPos);
+        float top = wordTop + webPos[1] - rootPos[1], bottom = wordBottom + webPos[1] - rootPos[1];
+        boolean coversAtBottom = bottom > screenH - panelH - dp(8);
+        boolean coversAtTop = top < panelH + dp(8);
+        boolean atTop = coversAtBottom && !coversAtTop;
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) dictPanel.getLayoutParams();
+        lp.height = panelH;
+        lp.gravity = atTop ? Gravity.TOP : Gravity.BOTTOM;
+        dictPanel.setLayoutParams(lp);
+        dictLineTop.setVisibility(atTop ? View.GONE : View.VISIBLE);
+        dictLineBottom.setVisibility(atTop ? View.VISIBLE : View.GONE);
     }
 
     void showDefinition(String word) {
@@ -926,6 +967,7 @@ public class ReaderActivity extends Activity {
                 .append("px)!important;object-fit:contain;break-inside:avoid;}\n");
         b.append("img{height:auto;}\n");
         b.append("a{color:inherit!important;}\n");
+        b.append("span.ilbreak{display:block!important;break-before:column!important;-webkit-column-break-before:always!important;height:0!important;margin:0!important;padding:0!important;}\n");
         b.append("span.ilmark{background:#000!important;color:#fff!important;}\n");
         return b.toString();
     }
