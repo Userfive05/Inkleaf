@@ -304,6 +304,9 @@ public class ReaderActivity extends Activity {
         s.setCacheMode(WebSettings.LOAD_NO_CACHE);
         s.setTextZoom(100);
         s.setSupportZoom(false);
+        // Honour our viewport tag so the page is never zoomed out to fit the wide column strip.
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(false);
         s.setBuiltInZoomControls(false);
         s.setAllowFileAccess(false);
         web.setBackgroundColor(Color.WHITE);
@@ -874,7 +877,10 @@ public class ReaderActivity extends Activity {
     }
 
     String inject(String html) {
-        String tags = "<link rel=\"stylesheet\" type=\"text/css\" href=\"/__inkleaf/style.css?v=" + cssVersion + "\"/>"
+        // Drop the book's own viewport tag; ours locks the scale at 1 (one column = one screen).
+        html = html.replaceAll("(?i)<meta[^>]*name\\s*=\\s*[\"']viewport[\"'][^>]*>", "");
+        String tags = "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no\"/>"
+                + "<link rel=\"stylesheet\" type=\"text/css\" href=\"/__inkleaf/style.css?v=" + cssVersion + "\"/>"
                 + "<script type=\"text/javascript\" src=\"/__inkleaf/reader.js?v=" + cssVersion + "\"></script>";
         Matcher head = Pattern.compile("(?i)</head\\s*>").matcher(html);
         if (head.find()) return html.substring(0, head.start()) + tags + html.substring(head.start());

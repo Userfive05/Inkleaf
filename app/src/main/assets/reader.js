@@ -3,7 +3,8 @@
   var IL = window.IL = { page: 0, count: 1, W: 1, ready: false };
 
   function measure() {
-    IL.W = window.innerWidth || 1;
+    // Layout-viewport width: unaffected by any zoom the WebView applies.
+    IL.W = document.documentElement.clientWidth || window.innerWidth || 1;
     var sw = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0);
     IL.count = Math.max(1, Math.ceil((sw - 2) / IL.W));
   }
