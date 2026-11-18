@@ -10,6 +10,14 @@
     <!-- Front light control -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
+    <!-- Lets "Other app" find installed dictionary apps -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+
     <application
         android:label="InkLeaf"
         android:icon="@drawable/ic_launcher"

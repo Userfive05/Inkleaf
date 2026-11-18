@@ -12,6 +12,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
+import android.text.InputType;
+import android.text.format.DateFormat;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -24,7 +26,10 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.inputmethod.EditorInfo;
 import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -32,6 +37,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -41,6 +47,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -56,6 +63,10 @@ public class ReaderActivity extends Activity {
     String key;
     WebView web;
     LinearLayout menu, panel;
+    LinearLayout dictPanel;
+    WebView dictWeb;
+    TextView dictWord, clock;
+    String currentWord = "";
     TextView status, lightToast, sizeValue, lineValue, marginValue, lightValue, fontButton;
     final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -90,7 +101,22 @@ public class ReaderActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (lightValue != null) refreshPanel();
+        ui.removeCallbacks(tick);
+        if (clock != null) tick.run();
     }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        ui.removeCallbacks(tick);
+    }
+
+    final Runnable tick = new Runnable() {
+        @Override public void run() {
+            clock.setText(DateFormat.getTimeFormat(ReaderActivity.this).format(new Date()));
+            ui.postDelayed(this, 60000 - (System.currentTimeMillis() % 60000) + 200);
+        }
+    };
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
@@ -143,11 +169,19 @@ public class ReaderActivity extends Activity {
         wl.bottomMargin = dp(28);
         root.addView(web, wl);
 
+        clock = new TextView(this);
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        clock.setTextColor(0xFF333333);
+        clock.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        clock.setPadding(dp(14), 0, 0, 0);
+        root.addView(clock, new FrameLayout.LayoutParams(-2, dp(28), Gravity.BOTTOM | Gravity.START));
+
         status = new TextView(this);
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         status.setTextColor(0xFF333333);
-        status.setGravity(Gravity.CENTER);
-        root.addView(status, new FrameLayout.LayoutParams(-1, dp(28), Gravity.BOTTOM));
+        status.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+        status.setPadding(0, 0, dp(14), 0);
+        root.addView(status, new FrameLayout.LayoutParams(-2, dp(28), Gravity.BOTTOM | Gravity.END));
 
         lightToast = new TextView(this);
         lightToast.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
@@ -158,6 +192,8 @@ public class ReaderActivity extends Activity {
         lightToast.setVisibility(View.GONE);
         root.addView(lightToast, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
 
+        root.addView(buildDictPanel(), new FrameLayout.LayoutParams(-1,
+                Math.round(getResources().getDisplayMetrics().heightPixels * 0.45f), Gravity.BOTTOM));
         root.addView(buildMenu(), new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
         setContentView(root);
         setupTouch();
@@ -174,13 +210,16 @@ public class ReaderActivity extends Activity {
         bar.setPadding(dp(8), dp(8), dp(8), dp(8));
         bar.addView(button("‹ Library", v -> finish()));
         bar.addView(button("Contents", v -> showContents()));
-        View spacer = new View(this);
-        bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
+        bar.addView(button("Search", v -> showSearch()));
+        bar.addView(button("Bookmarks", v -> showBookmarks()));
         bar.addView(button("Settings ▾", v -> {
             panel.setVisibility(panel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
             refreshPanel();
         }));
-        menu.addView(bar);
+        HorizontalScrollView barScroll = new HorizontalScrollView(this);
+        barScroll.setHorizontalScrollBarEnabled(false);
+        barScroll.addView(bar);
+        menu.addView(barScroll);
 
         panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -323,7 +362,7 @@ public class ReaderActivity extends Activity {
                 int n = book.spine.size();
                 int pct = Math.round((chapter + (page + 1) / (float) count) * 100f / n);
                 prefs.progress(key, chapter, page / (float) count, Math.min(100, pct));
-                status.setText("Chapter " + (chapter + 1) + " of " + n + "     ·     Page " + (page + 1) + " of " + count + "     ·     " + pct + "%");
+                status.setText((isBookmarked() ? "★  " : "") + "Ch. " + (chapter + 1) + "/" + n + "   ·   Page " + (page + 1) + "/" + count + "   ·   " + pct + "%");
             });
         }
     }
@@ -370,8 +409,11 @@ public class ReaderActivity extends Activity {
     void setupTouch() {
         web.setOnTouchListener(new View.OnTouchListener() {
             float x0, y0;
-            boolean edge, sliding, moved;
+            boolean edge, sliding, moved, longPressed;
             int startLight, lastLight;
+            final Runnable longPress = () -> {
+                if (!moved && !sliding) { longPressed = true; lookupAt(x0, y0); }
+            };
 
             @Override
             public boolean onTouch(View v, MotionEvent e) {
@@ -379,11 +421,12 @@ public class ReaderActivity extends Activity {
                     case MotionEvent.ACTION_DOWN:
                         x0 = e.getX(); y0 = e.getY();
                         edge = x0 < v.getWidth() * 0.15f;
-                        sliding = false; moved = false;
+                        sliding = false; moved = false; longPressed = false;
+                        ui.postDelayed(longPress, 500);
                         return true;
                     case MotionEvent.ACTION_MOVE: {
                         float dx = e.getX() - x0, dy = e.getY() - y0;
-                        if (Math.abs(dx) > dp(12) || Math.abs(dy) > dp(12)) moved = true;
+                        if (Math.abs(dx) > dp(12) || Math.abs(dy) > dp(12)) { moved = true; ui.removeCallbacks(longPress); }
                         if (edge && !sliding && Math.abs(dy) > dp(20) && Math.abs(dy) > Math.abs(dx) * 1.5f) {
                             sliding = true;
                             startLight = lastLight = Light.get(ReaderActivity.this, prefs);
@@ -399,8 +442,13 @@ public class ReaderActivity extends Activity {
                         }
                         return true;
                     }
+                    case MotionEvent.ACTION_CANCEL:
+                        ui.removeCallbacks(longPress);
+                        return true;
                     case MotionEvent.ACTION_UP: {
                         float dx = e.getX() - x0, dy = e.getY() - y0;
+                        ui.removeCallbacks(longPress);
+                        if (longPressed) return true;
                         if (sliding) {
                             ui.postDelayed(() -> lightToast.setVisibility(View.GONE), 700);
                             maybeAskLightPermission();
@@ -420,9 +468,9 @@ public class ReaderActivity extends Activity {
 
     void tap(float x, float y, int width) {
         if (menu.getVisibility() == View.VISIBLE) { showMenu(false); return; }
+        if (dictPanel.getVisibility() == View.VISIBLE) { closeDict(); return; }
         web.evaluateJavascript("IL.linkAt(" + x + "," + y + ")", r -> {
-            String href = "";
-            try { if (r != null && !r.equals("null")) href = new JSONArray("[" + r + "]").getString(0); } catch (Exception ignored) { }
+            String href = jsString(r);
             if (!href.isEmpty()) openLink(href);
             else if (x < width / 3f) prev();
             else if (x > width * 2 / 3f) next();
@@ -452,8 +500,273 @@ public class ReaderActivity extends Activity {
                 prev(); return true;
             case KeyEvent.KEYCODE_BACK:
                 if (menu.getVisibility() == View.VISIBLE) { showMenu(false); return true; }
+                if (dictPanel.getVisibility() == View.VISIBLE) { closeDict(); return true; }
         }
         return super.onKeyDown(code, e);
+    }
+
+
+    // ---------------------------------------------------------------- dictionary
+
+    View buildDictPanel() {
+        dictPanel = new LinearLayout(this);
+        dictPanel.setOrientation(LinearLayout.VERTICAL);
+        dictPanel.setBackgroundColor(Color.WHITE);
+        dictPanel.setVisibility(View.GONE);
+        dictPanel.setClickable(true);
+
+        View line = new View(this);
+        line.setBackgroundColor(Color.BLACK);
+        dictPanel.addView(line, new LinearLayout.LayoutParams(-1, dp(2)));
+
+        LinearLayout head = row();
+        head.setPadding(dp(14), dp(8), dp(8), dp(4));
+        dictWord = label("");
+        dictWord.setTextSize(TypedValue.COMPLEX_UNIT_SP, 21);
+        dictWord.setTypeface(Typeface.DEFAULT_BOLD);
+        head.addView(dictWord, new LinearLayout.LayoutParams(0, -2, 1));
+        head.addView(button("Other app", v -> openInOtherApp(currentWord)));
+        head.addView(button("Close", v -> closeDict()));
+        dictPanel.addView(head);
+
+        dictWeb = new WebView(this);
+        dictWeb.setBackgroundColor(Color.WHITE);
+        dictWeb.getSettings().setTextZoom(100);
+        dictWeb.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
+                String w = req.getUrl().getSchemeSpecificPart();
+                if ("bword".equals(req.getUrl().getScheme()) && w != null) showDefinition(w.replaceFirst("^//", ""));
+                return true;
+            }
+        });
+        dictPanel.addView(dictWeb, new LinearLayout.LayoutParams(-1, 0, 1));
+        return dictPanel;
+    }
+
+    void lookupAt(float x, float y) {
+        web.evaluateJavascript("IL.wordAt(" + x + "," + y + ")", r -> {
+            String w = jsString(r);
+            if (!w.isEmpty()) showDefinition(w);
+        });
+    }
+
+    void showDefinition(String word) {
+        currentWord = word;
+        showMenu(false);
+        dictPanel.setVisibility(View.VISIBLE);
+        dictWord.setText(word);
+        dictHtml("<p>Looking up…</p>");
+        new Thread(() -> {
+            List<Dictionary.Entry> found = Dictionary.lookup(this, word);
+            StringBuilder h = new StringBuilder();
+            for (Dictionary.Entry e : found)
+                h.append("<h3>").append(Dictionary.escape(e.source)).append("</h3>")
+                        .append("<p><b>").append(Dictionary.escape(e.headword)).append("</b></p>").append(e.html);
+            if (found.isEmpty()) {
+                Dictionary.Entry online = Dictionary.online(word);
+                if (online != null) {
+                    h.append("<h3>").append(online.source).append("</h3><p><b>").append(Dictionary.escape(online.headword))
+                            .append("</b></p>").append(online.html);
+                } else {
+                    h.append("<p>No definition found for <b>").append(Dictionary.escape(word)).append("</b>.</p>");
+                }
+                if (Dictionary.dictionaries(this).isEmpty())
+                    h.append("<p style='font-size:15px'>For offline definitions, copy StarDict dictionary files (.ifo, .idx, .dict) into "
+                            + "<b>koreader/data/dict</b> or a <b>Dictionaries</b> folder on the device.</p>");
+            }
+            String out = h.toString();
+            ui.post(() -> { if (word.equals(currentWord)) dictHtml(out); });
+        }).start();
+    }
+
+    void dictHtml(String body) {
+        String page = "<html><head><meta name='viewport' content='width=device-width'><style>"
+                + "body{font-family:serif;font-size:18px;line-height:1.4;color:#000;background:#fff;margin:4px 14px 14px;}"
+                + "h3{font-family:sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #000;margin:14px 0 6px;}"
+                + "a{color:#000;}img{max-width:100%;}"
+                + "</style></head><body>" + body + "</body></html>";
+        dictWeb.loadDataWithBaseURL("https://dict.local/", page, "text/html", "utf-8", null);
+        dictWeb.scrollTo(0, 0);
+    }
+
+    void closeDict() {
+        dictPanel.setVisibility(View.GONE);
+        web.evaluateJavascript("IL.clearMark && IL.clearMark()", null);
+    }
+
+    void openInOtherApp(String word) {
+        Intent i = new Intent(Intent.ACTION_PROCESS_TEXT);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_PROCESS_TEXT, word);
+        i.putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true);
+        if (getPackageManager().queryIntentActivities(i, 0).isEmpty()) {
+            Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, word);
+            try { startActivity(Intent.createChooser(send, "Look up “" + word + "”")); }
+            catch (Exception e) { Toast.makeText(this, "No other dictionary app found.", Toast.LENGTH_SHORT).show(); }
+            return;
+        }
+        startActivity(Intent.createChooser(i, "Look up “" + word + "”"));
+    }
+
+    // ---------------------------------------------------------------- search
+
+    void showSearch() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        input.setText(prefs.lastSearch());
+        input.setSelectAllOnFocus(true);
+        input.setTextColor(Color.BLACK);
+        LinearLayout wrapBox = new LinearLayout(this);
+        wrapBox.setPadding(dp(20), dp(8), dp(20), 0);
+        wrapBox.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("Search this book")
+                .setView(wrapBox)
+                .setPositiveButton("Search", (dlg, w) -> runSearch(input.getText().toString()))
+                .setNegativeButton("Cancel", null)
+                .create();
+        input.setOnEditorActionListener((v, action, ev) -> {
+            if (action == EditorInfo.IME_ACTION_SEARCH) { d.dismiss(); runSearch(input.getText().toString()); return true; }
+            return false;
+        });
+        d.show();
+        input.requestFocus();
+        d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+    }
+
+    void runSearch(String query) {
+        final String q = query.trim();
+        if (q.isEmpty()) return;
+        prefs.lastSearch(q);
+        AlertDialog wait = new AlertDialog.Builder(this).setMessage("Searching…").setCancelable(false).show();
+        new Thread(() -> {
+            List<BookSearch.Hit> hits = BookSearch.search(book, q);
+            ui.post(() -> {
+                wait.dismiss();
+                if (hits.isEmpty()) {
+                    Toast.makeText(this, "No matches for “" + q + "”.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                String[] rows = new String[hits.size()];
+                for (int i = 0; i < rows.length; i++)
+                    rows[i] = chapterTitle(hits.get(i).chapter) + "\n" + hits.get(i).snippet;
+                String title = hits.size() >= BookSearch.MAX_HITS ? "First " + hits.size() + " matches" : hits.size() + (hits.size() == 1 ? " match" : " matches");
+                new AlertDialog.Builder(this)
+                        .setTitle(title + " for “" + q + "”")
+                        .setItems(rows, (dlg, which) -> {
+                            showMenu(false);
+                            BookSearch.Hit h = hits.get(which);
+                            loadChapter(h.chapter, "find:" + h.nth + ":" + q);
+                        })
+                        .setNegativeButton("Close", null)
+                        .show();
+            });
+        }).start();
+    }
+
+    /** Table-of-contents title for a chapter, or "Chapter n". */
+    String chapterTitle(int idx) {
+        String best = null;
+        for (EpubBook.TocEntry e : book.toc) {
+            int i = book.spineIndex(e.target);
+            if (i == idx) return e.label.trim();
+            if (i >= 0 && i < idx) best = e.label.trim();
+        }
+        return best != null ? best : "Chapter " + (idx + 1);
+    }
+
+    // ---------------------------------------------------------------- bookmarks
+
+    boolean isBookmarked() {
+        JSONArray a = prefs.bookmarks(key);
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject b = a.optJSONObject(i);
+            if (b != null && b.optInt("ch") == chapter && pageOf(b.optDouble("fr")) == page) return true;
+        }
+        return false;
+    }
+
+    int pageOf(double fraction) { return (int) Math.floor(fraction * count + 0.0001); }
+
+    void showBookmarks() {
+        final JSONArray a = prefs.bookmarks(key);
+        final boolean here = isBookmarked();
+        List<String> rows = new ArrayList<>();
+        rows.add(here ? "− Remove bookmark from this page" : "+ Bookmark this page");
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject b = a.optJSONObject(i);
+            rows.add(b.optInt("pct") + "%  ·  " + chapterTitle(b.optInt("ch")) + "\n" + b.optString("label"));
+        }
+        AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("Bookmarks")
+                .setItems(rows.toArray(new String[0]), (dlg, which) -> {
+                    if (which == 0) { if (here) removeBookmarkHere(); else addBookmark(); return; }
+                    JSONObject b = a.optJSONObject(which - 1);
+                    showMenu(false);
+                    loadChapter(b.optInt("ch"), String.valueOf(b.optDouble("fr")));
+                })
+                .setNegativeButton("Close", null)
+                .create();
+        d.show();
+        if (a.length() > 0) {
+            d.getListView().setOnItemLongClickListener((parent, view, pos, id) -> {
+                if (pos == 0) return false;
+                d.dismiss();
+                new AlertDialog.Builder(this).setMessage("Delete this bookmark?")
+                        .setPositiveButton("Delete", (x, y) -> { a.remove(pos - 1); prefs.bookmarks(key, a); refreshStatus(); })
+                        .setNegativeButton("Cancel", null).show();
+                return true;
+            });
+            TextView tip = new TextView(this);
+            tip.setText("Hold a bookmark to delete it.");
+            tip.setPadding(dp(24), dp(8), dp(24), dp(8));
+            tip.setTextColor(0xFF444444);
+            d.getListView().addFooterView(tip, null, false);
+        }
+    }
+
+    void addBookmark() {
+        web.evaluateJavascript("IL.pageText()", r -> {
+            try {
+                int n = book.spine.size();
+                JSONObject b = new JSONObject();
+                b.put("ch", chapter);
+                b.put("fr", page / (double) count);
+                b.put("pct", Math.min(100, Math.round((chapter + (page + 1) / (float) count) * 100f / n)));
+                b.put("label", jsString(r));
+                b.put("time", System.currentTimeMillis());
+                JSONArray a = prefs.bookmarks(key);
+                // keep bookmarks in reading order
+                List<JSONObject> list = new ArrayList<>();
+                for (int i = 0; i < a.length(); i++) list.add(a.getJSONObject(i));
+                list.add(b);
+                list.sort((p, q) -> p.optInt("ch") != q.optInt("ch") ? p.optInt("ch") - q.optInt("ch") : Double.compare(p.optDouble("fr"), q.optDouble("fr")));
+                prefs.bookmarks(key, new JSONArray(list));
+                Toast.makeText(this, "Bookmarked", Toast.LENGTH_SHORT).show();
+                refreshStatus();
+            } catch (Exception ignored) { }
+        });
+    }
+
+    void removeBookmarkHere() {
+        JSONArray a = prefs.bookmarks(key), keep = new JSONArray();
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject b = a.optJSONObject(i);
+            if (!(b.optInt("ch") == chapter && pageOf(b.optDouble("fr")) == page)) keep.put(b);
+        }
+        prefs.bookmarks(key, keep);
+        refreshStatus();
+    }
+
+    void refreshStatus() {
+        web.evaluateJavascript("IL.ready && IL.go(IL.page)", null);
+    }
+
+    static String jsString(String r) {
+        if (r == null || r.equals("null")) return "";
+        try { return new JSONArray("[" + r + "]").getString(0); } catch (Exception e) { return ""; }
     }
 
     // ---------------------------------------------------------------- fonts
@@ -607,6 +920,7 @@ public class ReaderActivity extends Activity {
                 .append("px)!important;object-fit:contain;break-inside:avoid;}\n");
         b.append("img{height:auto;}\n");
         b.append("a{color:inherit!important;}\n");
+        b.append("span.ilmark{background:#000!important;color:#fff!important;}\n");
         return b.toString();
     }
 

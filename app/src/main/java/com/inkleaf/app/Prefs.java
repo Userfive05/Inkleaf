@@ -39,5 +39,14 @@ public class Prefs {
         p.edit().putInt("ch:" + k, chapter).putFloat("fr:" + k, fraction).putInt("pc:" + k, percent).apply();
     }
 
+    // Bookmarks, a JSON array per book: [{ch, fr, pct, label, time}]
+    public org.json.JSONArray bookmarks(String k) {
+        try { return new org.json.JSONArray(p.getString("bm:" + k, "[]")); } catch (Exception e) { return new org.json.JSONArray(); }
+    }
+    public void bookmarks(String k, org.json.JSONArray a) { p.edit().putString("bm:" + k, a.toString()).apply(); }
+
+    public String lastSearch() { return p.getString("lastSearch", ""); }
+    public void lastSearch(String v) { p.edit().putString("lastSearch", v).apply(); }
+
     static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 }
