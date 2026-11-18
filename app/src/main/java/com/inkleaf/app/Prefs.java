@@ -24,8 +24,8 @@ public class Prefs {
     public void leftAlign(boolean v) { p.edit().putBoolean("leftAlign", v).apply(); }
 
     // Front light (used when the app can't write the system setting)
-    public int light(int def) { return p.getInt("light", def); }
-    public void light(int v) { p.edit().putInt("light", v).apply(); }
+    public int lightOr(int def) { return p.getInt("light", def); }
+    public void saveLight(int v) { p.edit().putInt("light", v).apply(); }
     public boolean askedLight() { return p.getBoolean("askedLight", false); }
     public void askedLight(boolean v) { p.edit().putBoolean("askedLight", v).apply(); }
 

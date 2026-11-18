@@ -351,7 +351,7 @@ public class ReaderActivity extends Activity {
         String frag = hash >= 0 ? target.substring(hash + 1) : null;
         int idx = book.spineIndex(path);
         if (idx < 0) return;
-        if (idx == chapter && frag != null) web.evaluateJavascript("IL.anchor(" + JSONArray.quote(frag) + ")", null);
+        if (idx == chapter && frag != null) web.evaluateJavascript("IL.anchor(" + org.json.JSONObject.quote(frag) + ")", null);
         else loadChapter(idx, frag != null ? "#" + frag : "0");
     }
 

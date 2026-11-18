@@ -19,12 +19,12 @@ public class Light {
     public static int get(Activity a, Prefs prefs) {
         int sys = 128;
         try { sys = Settings.System.getInt(a.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS); } catch (Exception ignored) { }
-        return canWriteSystem(a) ? sys : prefs.light(sys);
+        return canWriteSystem(a) ? sys : prefs.lightOr(sys);
     }
 
     public static void set(Activity a, Prefs prefs, int value) {
         value = Prefs.clamp(value, 0, MAX);
-        prefs.light(value);
+        prefs.saveLight(value);
         if (canWriteSystem(a)) {
             try {
                 Settings.System.putInt(a.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS_MODE,
@@ -40,7 +40,7 @@ public class Light {
     /** Re-applies the saved level when the app can't write the system value. */
     public static void restore(Activity a, Prefs prefs) {
         if (!canWriteSystem(a)) {
-            int v = prefs.light(-1);
+            int v = prefs.lightOr(-1);
             if (v >= 0) set(a, prefs, v);
         }
     }
