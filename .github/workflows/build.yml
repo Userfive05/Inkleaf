@@ -21,7 +21,16 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build APK
-        run: gradle assembleRelease
+        run: |
+          set -o pipefail
+          gradle assembleRelease --console=plain 2>&1 | tee build.log
+      - name: Publish build log on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ci-log --yes --cleanup-tag || true
+          gh release create ci-log build.log --prerelease --title "CI log (failed build)" --notes "Log from the last failed build."
       - name: Publish APK as a release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -33,3 +42,4 @@ jobs:
             --title "InkLeaf build ${GITHUB_RUN_NUMBER}" \
             --notes "${MSG} (${GITHUB_SHA::7}). Install InkLeaf.apk, or tap Update inside the app." \
             --latest
+          gh release delete ci-log --yes --cleanup-tag || true
