@@ -1,0 +1,35 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        run: gradle assembleRelease
+      - name: Publish APK as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk InkLeaf.apk
+          TAG="build-${GITHUB_RUN_NUMBER}"
+          MSG="$(git log -1 --pretty=%s)"
+          gh release create "$TAG" InkLeaf.apk \
+            --title "InkLeaf build ${GITHUB_RUN_NUMBER}" \
+            --notes "${MSG} (${GITHUB_SHA::7}). Install InkLeaf.apk, or tap Update inside the app." \
+            --latest

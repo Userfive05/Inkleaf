@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Each GitHub Actions run becomes a build number; the in-app updater compares against it.
+def buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+
+android {
+    namespace 'com.inkleaf.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.inkleaf.app'
+        minSdk 26
+        targetSdk 34
+        versionCode buildNumber
+        versionName "build ${buildNumber}"
+    }
+
+    // A fixed key so every build can install over the previous one.
+    signingConfigs {
+        inkleaf {
+            storeFile file('inkleaf.keystore')
+            storePassword 'inkleaf'
+            keyAlias 'inkleaf'
+            keyPassword 'inkleaf'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.inkleaf
+        }
+        debug {
+            signingConfig signingConfigs.inkleaf
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
