@@ -22,6 +22,10 @@ public class Prefs {
     public void noHyphens(boolean v) { p.edit().putBoolean("noHyphens", v).apply(); }
     public boolean leftAlign() { return p.getBoolean("leftAlign", true); }
     public void leftAlign(boolean v) { p.edit().putBoolean("leftAlign", v).apply(); }
+    public int boldness() { return p.getInt("boldness", 0); }           // 0 = normal … 5 = heaviest
+    public void boldness(int v) { p.edit().putInt("boldness", clamp(v, 0, 5)).apply(); }
+    public String italics() { return p.getString("italics", "book"); }   // book | none | all
+    public void italics(String v) { p.edit().putString("italics", v).apply(); }
     public boolean keepSentences() { return p.getBoolean("keepSentences", true); }
     public void keepSentences(boolean v) { p.edit().putBoolean("keepSentences", v).apply(); }
 

@@ -6,7 +6,11 @@ import android.os.Environment;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 /** Finds font files: ones added in the app, plus /sdcard/Fonts and KOReader's font folder. */
 public class Fonts {
@@ -26,6 +30,73 @@ public class Fonts {
         String n = new File(path).getName();
         int dot = n.lastIndexOf('.');
         return dot > 0 ? n.substring(0, dot) : n;
+    }
+
+    // ---- font families: Literata-Regular.ttf, Literata-Bold.ttf, Literata-Italic.ttf … ----
+
+    private static final Pattern STYLE_SUFFIX = Pattern.compile(
+            "(?i)[-_ ]*(extrabold|ultrabold|semibold|demibold|bold|black|heavy|medium|extralight|ultralight|light|thin|regular|book|normal|roman|italic|oblique)$");
+
+    /** Family name from a file name, e.g. "Literata-BoldItalic.ttf" → "Literata". */
+    public static String familyName(String path) {
+        String base = displayName(path), prev;
+        do { prev = base; base = STYLE_SUFFIX.matcher(base).replaceAll(""); } while (!base.equals(prev) && !base.isEmpty());
+        return base.isEmpty() ? displayName(path) : base;
+    }
+
+    public static boolean isItalic(String path) {
+        String n = displayName(path).toLowerCase(Locale.ROOT);
+        return n.contains("italic") || n.contains("oblique");
+    }
+
+    public static int weight(String path) {
+        String n = displayName(path).toLowerCase(Locale.ROOT).replaceAll("[-_ ]", "");
+        if (n.contains("extrabold") || n.contains("ultrabold")) return 800;
+        if (n.contains("semibold") || n.contains("demibold")) return 600;
+        if (n.contains("bold")) return 700;
+        if (n.contains("black") || n.contains("heavy")) return 900;
+        if (n.contains("medium")) return 500;
+        if (n.contains("extralight") || n.contains("ultralight")) return 200;
+        if (n.contains("light")) return 300;
+        if (n.contains("thin")) return 100;
+        return 400;
+    }
+
+    /** Every file in the same folder that belongs to the same family as {@code path}. */
+    public static List<File> familyOf(String path) {
+        File f = new File(path);
+        List<File> out = new ArrayList<>();
+        File[] siblings = f.getParentFile() == null ? null : f.getParentFile().listFiles();
+        String fam = familyName(path).toLowerCase(Locale.ROOT);
+        if (siblings != null)
+            for (File s : siblings)
+                if (s.isFile() && isFont(s.getName()) && familyName(s.getPath()).toLowerCase(Locale.ROOT).equals(fam)) out.add(s);
+        if (out.isEmpty()) out.add(f);
+        return out;
+    }
+
+    /** One entry per family (key: its regular-style file path, value: family name). */
+    public static Map<String, String> families(Context c) {
+        Map<String, List<File>> groups = new LinkedHashMap<>();
+        for (File f : all(c)) {
+            String key = f.getParent() + "/" + familyName(f.getPath()).toLowerCase(Locale.ROOT);
+            List<File> g = groups.get(key);
+            if (g == null) groups.put(key, g = new ArrayList<>());
+            g.add(f);
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (List<File> g : groups.values()) {
+            File best = g.get(0);
+            int bestScore = Integer.MAX_VALUE;
+            for (File f : g) {
+                int score = Math.abs(weight(f.getPath()) - 400) + (isItalic(f.getPath()) ? 1000 : 0);
+                if (score < bestScore) { best = f; bestScore = score; }
+            }
+            String name = familyName(best.getPath());
+            if (g.size() > 1) name += "  (" + g.size() + " styles)";
+            out.put(best.getAbsolutePath(), name);
+        }
+        return out;
     }
 
     public static List<File> added(Context c) {

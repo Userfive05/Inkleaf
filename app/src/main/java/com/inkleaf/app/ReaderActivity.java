@@ -68,6 +68,7 @@ public class ReaderActivity extends Activity {
     WebView dictWeb;
     TextView dictWord, clock;
     String currentWord = "";
+    TextView boldValue, italicButton;
     TextView status, lightToast, sizeValue, lineValue, marginValue, lightValue, fontButton;
     final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -237,6 +238,17 @@ public class ReaderActivity extends Activity {
         fontRow.addView(fontButton);
         panel.addView(fontRow);
 
+        boldValue = value();
+        panel.addView(stepper("Boldness", boldValue,
+                () -> { prefs.boldness(prefs.boldness() - 1); restyle(); },
+                () -> { prefs.boldness(prefs.boldness() + 1); restyle(); }));
+
+        LinearLayout italicRow = row();
+        italicRow.addView(label("Italics"), new LinearLayout.LayoutParams(0, -2, 1));
+        italicButton = button("", v -> chooseItalics());
+        italicRow.addView(italicButton);
+        panel.addView(italicRow);
+
         lineValue = value();
         panel.addView(stepper("Line spacing", lineValue,
                 () -> { prefs.lineHeight(prefs.lineHeight() - 1); restyle(); },
@@ -291,6 +303,8 @@ public class ReaderActivity extends Activity {
         marginValue.setText(String.valueOf(prefs.margin()));
         lightValue.setText(Light.percent(Light.get(this, prefs)) + "%");
         fontButton.setText(fontName(prefs.font()) + " ▾");
+        boldValue.setText(boldName(prefs.boldness()));
+        italicButton.setText(italicsName(prefs.italics()) + " ▾");
     }
 
     void showMenu(boolean show) {
@@ -819,16 +833,34 @@ public class ReaderActivity extends Activity {
         if (f.equals("book")) return "Book default";
         if (f.equals("serif")) return "Serif";
         if (f.equals("sans")) return "Sans-serif";
-        return Fonts.displayName(f);
+        return Fonts.familyName(f);
+    }
+
+    String italicsName(String v) {
+        return v.equals("none") ? "No italics" : v.equals("all") ? "All italic" : "As in book";
+    }
+
+    String boldName(int v) { return v == 0 ? "Normal" : "+" + v; }
+
+    void chooseItalics() {
+        final String[] values = {"book", "none", "all"};
+        String[] names = new String[values.length];
+        for (int i = 0; i < values.length; i++) names[i] = italicsName(values[i]);
+        new AlertDialog.Builder(this).setTitle("Italics")
+                .setItems(names, (d, which) -> { prefs.italics(values[which]); restyle(); })
+                .show();
     }
 
     void chooseFont() {
         final List<String> values = new ArrayList<>();
         final List<String> names = new ArrayList<>();
         values.add("book"); values.add("serif"); values.add("sans");
-        for (File f : Fonts.all(this)) values.add(f.getAbsolutePath());
         for (String v : values) names.add(fontName(v));
-        names.add("+ Add font file…");
+        for (java.util.Map.Entry<String, String> fam : Fonts.families(this).entrySet()) {
+            values.add(fam.getKey());
+            names.add(fam.getValue());
+        }
+        names.add("+ Add font files…");
         final boolean canRemove = !Fonts.added(this).isEmpty();
         if (canRemove) names.add("Remove an added font…");
         new AlertDialog.Builder(this)
@@ -845,6 +877,7 @@ public class ReaderActivity extends Activity {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType("*/*");
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); // pick Regular, Bold, Italic… together
         try { startActivityForResult(i, REQ_FONT); }
         catch (Exception e) { Toast.makeText(this, "No file picker found. Put fonts in a \"Fonts\" folder on the device instead.", Toast.LENGTH_LONG).show(); }
     }
@@ -864,22 +897,36 @@ public class ReaderActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
         super.onActivityResult(req, result, data);
-        if (req != REQ_FONT || result != RESULT_OK || data == null || data.getData() == null) return;
-        Uri u = data.getData();
-        String name = queryName(u);
-        if (name == null || !Fonts.isFont(name)) {
-            Toast.makeText(this, "Pick a .ttf, .otf, .woff or .woff2 file.", Toast.LENGTH_LONG).show();
+        if (req != REQ_FONT || result != RESULT_OK || data == null) return;
+        List<Uri> uris = new ArrayList<>();
+        if (data.getClipData() != null)
+            for (int i = 0; i < data.getClipData().getItemCount(); i++) uris.add(data.getClipData().getItemAt(i).getUri());
+        else if (data.getData() != null) uris.add(data.getData());
+        File chosen = null;
+        int added = 0, skipped = 0;
+        for (Uri u : uris) {
+            String name = queryName(u);
+            if (name == null || !Fonts.isFont(name)) { skipped++; continue; }
+            try {
+                File out = new File(Fonts.addedDir(this), name.replaceAll("[/\\\\]", "_"));
+                copy(getContentResolver().openInputStream(u), new FileOutputStream(out));
+                added++;
+                // Select the regular style if it was among the files, else the first one added.
+                if (chosen == null || (Fonts.weight(out.getPath()) == 400 && !Fonts.isItalic(out.getPath()))) chosen = out;
+            } catch (Exception e) {
+                skipped++;
+            }
+        }
+        if (chosen == null) {
+            Toast.makeText(this, "Pick .ttf, .otf, .woff or .woff2 files.", Toast.LENGTH_LONG).show();
             return;
         }
-        try {
-            File out = new File(Fonts.addedDir(this), name.replaceAll("[/\\\\]", "_"));
-            copy(getContentResolver().openInputStream(u), new FileOutputStream(out));
-            prefs.font(out.getAbsolutePath());
-            Toast.makeText(this, "Added " + Fonts.displayName(name), Toast.LENGTH_SHORT).show();
-            restyle();
-        } catch (Exception e) {
-            Toast.makeText(this, "Couldn't add font: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
+        prefs.font(chosen.getAbsolutePath());
+        int styles = Fonts.familyOf(chosen.getAbsolutePath()).size();
+        Toast.makeText(this, "Added " + added + (added == 1 ? " font file" : " font files") + " · "
+                + Fonts.familyName(chosen.getPath()) + " has " + styles + (styles == 1 ? " style" : " styles")
+                + (skipped > 0 ? " · skipped " + skipped : ""), Toast.LENGTH_LONG).show();
+        restyle();
     }
 
     // ---------------------------------------------------------------- serving book content to the WebView
@@ -941,8 +988,16 @@ public class ReaderActivity extends Activity {
         if (font.equals("serif")) family = "serif";
         else if (font.equals("sans")) family = "sans-serif";
         else if (!font.equals("book") && new File(font).isFile()) {
-            b.append("@font-face{font-family:\"InkLeafUser\";src:url(\"/__inkleaf/font?p=")
-                    .append(Uri.encode(font)).append("\");}\n");
+            List<File> faces = Fonts.familyOf(font);
+            for (File face : faces) {
+                b.append("@font-face{font-family:\"InkLeafUser\";src:url(\"/__inkleaf/font?p=")
+                        .append(Uri.encode(face.getAbsolutePath())).append("\");");
+                // With several files, tell the browser which one is bold / italic; a lone file covers everything.
+                if (faces.size() > 1)
+                    b.append("font-weight:").append(Fonts.weight(face.getPath()))
+                            .append(";font-style:").append(Fonts.isItalic(face.getPath()) ? "italic" : "normal").append(";");
+                b.append("}\n");
+            }
             family = "\"InkLeafUser\", serif";
         }
         b.append("html{margin:0!important;padding:0!important;height:100vh!important;overflow:hidden!important;")
@@ -955,6 +1010,14 @@ public class ReaderActivity extends Activity {
                 .append("width:auto!important;max-width:none!important;font-size:1rem!important;")
                 .append("color:#000!important;background:#fff!important;}\n");
         b.append("body,body *{line-height:").append(lh).append("!important;}\n");
+        // Boldness: thicken every glyph's outline, which works with any font.
+        float[] stroke = {0f, 0.15f, 0.3f, 0.45f, 0.6f, 0.8f};
+        int bold = Prefs.clamp(prefs.boldness(), 0, stroke.length - 1);
+        if (bold > 0)
+            b.append("body,body *{-webkit-text-stroke:").append(String.format(Locale.US, "%.2f", stroke[bold]))
+                    .append("px currentColor!important;paint-order:stroke fill;}\n");
+        if (prefs.italics().equals("none")) b.append("body,body *{font-style:normal!important;font-synthesis:none;}\n");
+        else if (prefs.italics().equals("all")) b.append("body,body *{font-style:italic!important;}\n");
         if (family != null)
             b.append("body,body *:not(code):not(pre):not(kbd):not(samp):not(tt){font-family:").append(family).append("!important;}\n");
         if (prefs.noHyphens())
