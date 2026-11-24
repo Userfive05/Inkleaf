@@ -84,6 +84,13 @@ public class LibraryActivity extends Activity {
 
         setContentView(root);
 
+        // Opened from the launcher after the app was closed while reading: go straight back to that book.
+        String reading = prefs.reading();
+        if (saved == null && Intent.ACTION_MAIN.equals(getIntent().getAction())
+                && reading != null && new File(reading).isFile()) {
+            startActivity(new Intent(this, ReaderActivity.class).putExtra("path", reading));
+        }
+
         // Quiet check so the Update button shows when there's something new.
         Updater.latest(this, (build, url) -> {
             if (build > BuildConfig.VERSION_CODE && url != null) updateButton.setText("Update ●");

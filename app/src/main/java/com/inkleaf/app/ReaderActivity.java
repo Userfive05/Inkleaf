@@ -88,6 +88,7 @@ public class ReaderActivity extends Activity {
             book = new EpubBook(f);
         } catch (Exception e) {
             Toast.makeText(this, "Couldn't open this EPUB: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            if (f.getAbsolutePath().equals(prefs.reading())) prefs.reading(null);
             finish();
             return;
         }
@@ -103,6 +104,7 @@ public class ReaderActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (lightValue != null) refreshPanel();
+        if (key != null) prefs.reading(key);
         ui.removeCallbacks(tick);
         if (clock != null) tick.run();
     }
@@ -111,6 +113,8 @@ public class ReaderActivity extends Activity {
     protected void onPause() {
         super.onPause();
         ui.removeCallbacks(tick);
+        // Leaving for the library forgets the book; going home or switching apps keeps it.
+        if (key != null) prefs.reading(isFinishing() ? null : key);
     }
 
     final Runnable tick = new Runnable() {

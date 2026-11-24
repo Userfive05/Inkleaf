@@ -35,6 +35,10 @@ public class Prefs {
     public boolean askedLight() { return p.getBoolean("askedLight", false); }
     public void askedLight(boolean v) { p.edit().putBoolean("askedLight", v).apply(); }
 
+    // The book open when the app was last left (null once the reader is closed on purpose)
+    public String reading() { return p.getString("reading", null); }
+    public void reading(String path) { p.edit().putString("reading", path).apply(); }
+
     // Per-book progress, keyed by absolute path
     public int chapter(String k) { return p.getInt("ch:" + k, 0); }
     public float fraction(String k) { return p.getFloat("fr:" + k, 0f); }
