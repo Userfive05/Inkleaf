@@ -3,7 +3,7 @@
 A minimal EPUB reader for the Onyx Boox Go 7.
 
 ## Features
-- **Library**: lists every EPUB on the device, most recently opened first, with % read.
+- **Library**: a *Continue reading* card for the last book, then every EPUB on the device as a cover **grid** or a **list** (toggle at the top). Covers come from the books (books without one get a title card), and each cover shows a progress bar and % once you're at least 2% in. Titles, authors and covers are cached, so the library opens quickly.
 - **Page turns**: tap the right third of the page for next, the left third for previous (swiping and the page/volume buttons also work).
 - **Menu**: tap the middle of the page to open Library · Contents · **Settings ▾**.
 - **Settings dropdown**: text size, font, line spacing, margins, light, no hyphens, left alignment, Update.
