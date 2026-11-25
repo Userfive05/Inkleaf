@@ -68,7 +68,8 @@ public class ReaderActivity extends Activity {
     WebView dictWeb;
     TextView dictWord, clock;
     String currentWord = "";
-    TextView boldValue, italicButton;
+    TextView boldValue, italicButton, progressButton;
+    ProgressBarView progressBar;
     TextView status, lightToast, sizeValue, lineValue, marginValue, lightValue, fontButton;
     final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -189,6 +190,13 @@ public class ReaderActivity extends Activity {
         status.setPadding(0, 0, dp(14), 0);
         root.addView(status, new FrameLayout.LayoutParams(-2, dp(28), Gravity.BOTTOM | Gravity.END));
 
+        progressBar = new ProgressBarView(this);
+        FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(-1, dp(7), Gravity.BOTTOM);
+        pl.leftMargin = dp(14);
+        pl.rightMargin = dp(14);
+        pl.bottomMargin = dp(24);
+        root.addView(progressBar, pl);
+
         lightToast = new TextView(this);
         lightToast.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
         lightToast.setTextColor(Color.BLACK);
@@ -280,6 +288,12 @@ public class ReaderActivity extends Activity {
         CheckBox left = check("Left-align text (no justified spacing)", prefs.leftAlign());
         left.setOnCheckedChangeListener((b, on) -> { prefs.leftAlign(on); restyle(); });
         panel.addView(left);
+        LinearLayout barRow = row();
+        barRow.addView(label("Progress bar"), new LinearLayout.LayoutParams(0, -2, 1));
+        progressButton = button("", v -> chooseProgressBar());
+        barRow.addView(progressButton);
+        panel.addView(barRow);
+
         CheckBox keep = check("End pages at a sentence (never mid-sentence)", prefs.keepSentences());
         keep.setOnCheckedChangeListener((b, on) -> { prefs.keepSentences(on); restyle(); });
         panel.addView(keep);
@@ -309,6 +323,7 @@ public class ReaderActivity extends Activity {
         fontButton.setText(fontName(prefs.font()) + " ▾");
         boldValue.setText(boldName(prefs.boldness()));
         italicButton.setText(italicsName(prefs.italics()) + " ▾");
+        progressButton.setText(progressName(prefs.progressBar()) + " ▾");
     }
 
     void showMenu(boolean show) {
@@ -385,7 +400,8 @@ public class ReaderActivity extends Activity {
                 page = p;
                 count = Math.max(1, c);
                 int n = book.spine.size();
-                int pct = Math.round((chapter + (page + 1) / (float) count) * 100f / n);
+                int pct = (int) Math.round(book.progress(chapter, (page + 1) / (double) count) * 100);
+                updateProgressBar();
                 prefs.progress(key, chapter, page / (float) count, Math.min(100, pct));
                 status.setText((isBookmarked() ? "★  " : "") + "Ch. " + (chapter + 1) + "/" + n + "   ·   Page " + (page + 1) + "/" + count + "   ·   " + pct + "%");
             });
@@ -796,7 +812,7 @@ public class ReaderActivity extends Activity {
                 JSONObject b = new JSONObject();
                 b.put("ch", chapter);
                 b.put("fr", page / (double) count);
-                b.put("pct", Math.min(100, Math.round((chapter + (page + 1) / (float) count) * 100f / n)));
+                b.put("pct", Math.min(100, (int) Math.round(book.progress(chapter, (page + 1) / (double) count) * 100)));
                 b.put("label", jsString(r));
                 b.put("time", System.currentTimeMillis());
                 JSONArray a = prefs.bookmarks(key);
@@ -845,6 +861,35 @@ public class ReaderActivity extends Activity {
     }
 
     String boldName(int v) { return v == 0 ? "Normal" : "+" + v; }
+
+    String progressName(String v) {
+        return v.equals("off") ? "Off" : v.equals("chapter") ? "This chapter" : "Whole book";
+    }
+
+    void chooseProgressBar() {
+        final String[] values = {"off", "chapter", "book"};
+        String[] names = new String[values.length];
+        for (int i = 0; i < values.length; i++) names[i] = progressName(values[i]);
+        new AlertDialog.Builder(this).setTitle("Progress bar")
+                .setItems(names, (d, which) -> { prefs.progressBar(values[which]); refreshPanel(); updateProgressBar(); })
+                .show();
+    }
+
+    /** Chapter mode: pages through this chapter. Book mode: whole book, with a tick at each chapter start. */
+    void updateProgressBar() {
+        String mode = prefs.progressBar();
+        if (mode.equals("off")) { progressBar.setVisibility(View.GONE); return; }
+        progressBar.setVisibility(View.VISIBLE);
+        double within = (page + 1) / (double) Math.max(1, count);
+        if (mode.equals("chapter")) {
+            progressBar.set((float) within, null);
+        } else {
+            int n = book.spine.size();
+            float[] ticks = new float[n <= 60 ? n : 0]; // skip ticks when there are so many they'd blur together
+            for (int i = 0; i < ticks.length; i++) ticks[i] = (float) book.chapterStart[i];
+            progressBar.set((float) book.progress(chapter, within), ticks);
+        }
+    }
 
     void chooseItalics() {
         final String[] values = {"book", "none", "all"};

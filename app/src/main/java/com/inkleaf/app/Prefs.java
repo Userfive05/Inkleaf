@@ -26,6 +26,8 @@ public class Prefs {
     public void boldness(int v) { p.edit().putInt("boldness", clamp(v, 0, 5)).apply(); }
     public String italics() { return p.getString("italics", "book"); }   // book | none | all
     public void italics(String v) { p.edit().putString("italics", v).apply(); }
+    public String progressBar() { return p.getString("progressBar", "book"); } // off | chapter | book
+    public void progressBar(String v) { p.edit().putString("progressBar", v).apply(); }
     public boolean keepSentences() { return p.getBoolean("keepSentences", true); }
     public void keepSentences(boolean v) { p.edit().putBoolean("keepSentences", v).apply(); }
 

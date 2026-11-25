@@ -39,6 +39,8 @@ public class EpubBook implements Closeable {
     public String title = "";
     public final List<String> spine = new ArrayList<>();
     public final List<TocEntry> toc = new ArrayList<>();
+    /** Where each chapter starts in the book (0..1), weighted by chapter size; last element is 1. */
+    public double[] chapterStart = new double[0];
 
     public EpubBook(File f) throws Exception {
         file = f;
@@ -69,6 +71,16 @@ public class EpubBook implements Closeable {
             if (href != null) spine.add(href);
         }
         if (spine.isEmpty()) throw new IOException("book has no chapters");
+        long[] sizes = new long[spine.size()];
+        long total = 0;
+        for (int i = 0; i < sizes.length; i++) {
+            ZipEntry e = zip.getEntry(spine.get(i));
+            sizes[i] = Math.max(1, e != null && e.getSize() > 0 ? e.getSize() : 1);
+            total += sizes[i];
+        }
+        chapterStart = new double[sizes.length + 1];
+        for (int i = 0; i < sizes.length; i++) chapterStart[i + 1] = chapterStart[i] + sizes[i] / (double) total;
+        chapterStart[sizes.length] = 1.0;
 
         if (nav != null) { try { readNav(nav); } catch (Exception ignored) { toc.clear(); } }
         if (toc.isEmpty() && ncx != null) { try { readNcx(ncx); } catch (Exception ignored) { toc.clear(); } }
@@ -86,6 +98,13 @@ public class EpubBook implements Closeable {
             }
         }
         return e == null ? null : zip.getInputStream(e);
+    }
+
+    /** Fraction of the whole book read, given the chapter and the fraction read within it. */
+    public double progress(int chapter, double withinChapter) {
+        if (chapter < 0 || chapter >= spine.size()) return 0;
+        double a = chapterStart[chapter], b = chapterStart[chapter + 1];
+        return a + (b - a) * Math.max(0, Math.min(1, withinChapter));
     }
 
     public int spineIndex(String path) {
