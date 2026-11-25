@@ -70,6 +70,7 @@ public class ReaderActivity extends Activity {
     String currentWord = "";
     TextView boldValue, italicButton, progressButton;
     ProgressBarView progressBar;
+    TextView statusSizeValue, statusWeightValue;
     TextView status, lightToast, sizeValue, lineValue, marginValue, lightValue, fontButton;
     final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -196,6 +197,7 @@ public class ReaderActivity extends Activity {
         pl.rightMargin = dp(14);
         pl.bottomMargin = dp(24);
         root.addView(progressBar, pl);
+        applyStatusStyle();
 
         lightToast = new TextView(this);
         lightToast.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
@@ -294,6 +296,15 @@ public class ReaderActivity extends Activity {
         barRow.addView(progressButton);
         panel.addView(barRow);
 
+        statusSizeValue = value();
+        panel.addView(stepper("Status text size", statusSizeValue,
+                () -> { prefs.statusSize(prefs.statusSize() - 1); applyStatusStyle(); refreshPanel(); },
+                () -> { prefs.statusSize(prefs.statusSize() + 1); applyStatusStyle(); refreshPanel(); }));
+        statusWeightValue = value();
+        panel.addView(stepper("Status text boldness", statusWeightValue,
+                () -> { prefs.statusWeight(prefs.statusWeight() - 1); applyStatusStyle(); refreshPanel(); },
+                () -> { prefs.statusWeight(prefs.statusWeight() + 1); applyStatusStyle(); refreshPanel(); }));
+
         CheckBox keep = check("End pages at a sentence (never mid-sentence)", prefs.keepSentences());
         keep.setOnCheckedChangeListener((b, on) -> { prefs.keepSentences(on); restyle(); });
         panel.addView(keep);
@@ -324,6 +335,8 @@ public class ReaderActivity extends Activity {
         boldValue.setText(boldName(prefs.boldness()));
         italicButton.setText(italicsName(prefs.italics()) + " ▾");
         progressButton.setText(progressName(prefs.progressBar()) + " ▾");
+        statusSizeValue.setText(String.valueOf(prefs.statusSize()));
+        statusWeightValue.setText(STATUS_WEIGHTS[prefs.statusWeight()]);
     }
 
     void showMenu(boolean show) {
@@ -861,6 +874,37 @@ public class ReaderActivity extends Activity {
     }
 
     String boldName(int v) { return v == 0 ? "Normal" : "+" + v; }
+
+    static final String[] STATUS_WEIGHTS = {"Normal", "Medium", "Bold", "Black"};
+
+    /** Size and weight of the clock and page/% text; the bottom strip grows to fit so the page never sits under it. */
+    void applyStatusStyle() {
+        int sp = prefs.statusSize();
+        int w = prefs.statusWeight();
+        Typeface face = w == 1 ? Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                : w == 2 ? Typeface.DEFAULT_BOLD
+                : w == 3 ? Typeface.create("sans-serif-black", Typeface.NORMAL)
+                : Typeface.DEFAULT;
+        int color = w == 0 ? 0xFF333333 : Color.BLACK;
+        float textPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics());
+        int strip = Math.max(dp(28), Math.round(textPx * 2.1f));
+        for (TextView t : new TextView[]{clock, status}) {
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+            t.setTypeface(face);
+            t.setTextColor(color);
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) t.getLayoutParams();
+            lp.height = strip;
+            t.setLayoutParams(lp);
+        }
+        FrameLayout.LayoutParams pl = (FrameLayout.LayoutParams) progressBar.getLayoutParams();
+        pl.bottomMargin = strip - dp(4);
+        progressBar.setLayoutParams(pl);
+        FrameLayout.LayoutParams wl = (FrameLayout.LayoutParams) web.getLayoutParams();
+        if (wl.bottomMargin != strip) { // changing this re-flows the chapter, so only when it actually changes
+            wl.bottomMargin = strip;
+            web.setLayoutParams(wl);
+        }
+    }
 
     String progressName(String v) {
         return v.equals("off") ? "Off" : v.equals("chapter") ? "This chapter" : "Whole book";

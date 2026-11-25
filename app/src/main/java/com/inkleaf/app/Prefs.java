@@ -26,6 +26,10 @@ public class Prefs {
     public void boldness(int v) { p.edit().putInt("boldness", clamp(v, 0, 5)).apply(); }
     public String italics() { return p.getString("italics", "book"); }   // book | none | all
     public void italics(String v) { p.edit().putString("italics", v).apply(); }
+    public int statusSize() { return p.getInt("statusSize", 13); }      // sp
+    public void statusSize(int v) { p.edit().putInt("statusSize", clamp(v, 9, 24)).apply(); }
+    public int statusWeight() { return p.getInt("statusWeight", 0); }   // 0 normal, 1 medium, 2 bold, 3 black
+    public void statusWeight(int v) { p.edit().putInt("statusWeight", clamp(v, 0, 3)).apply(); }
     public String progressBar() { return p.getString("progressBar", "book"); } // off | chapter | book
     public void progressBar(String v) { p.edit().putString("progressBar", v).apply(); }
     public boolean keepSentences() { return p.getBoolean("keepSentences", true); }
