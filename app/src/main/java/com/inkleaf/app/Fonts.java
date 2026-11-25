@@ -15,6 +15,36 @@ import java.util.regex.Pattern;
 /** Finds font files: ones added in the app, plus /sdcard/Fonts and KOReader's font folder. */
 public class Fonts {
 
+    // ---- fonts shipped inside the app: assets/fonts/<Family>/<files> ----
+
+    public static final String BUNDLED = "asset:";
+
+    /** Family names of the fonts that ship with InkLeaf, alphabetically. */
+    public static List<String> bundledFamilies(Context c) {
+        List<String> out = new ArrayList<>();
+        try {
+            String[] dirs = c.getAssets().list("fonts");
+            if (dirs != null) for (String d : dirs) out.add(d);
+        } catch (Exception ignored) { }
+        Collections.sort(out, String::compareToIgnoreCase);
+        return out;
+    }
+
+    /** Font files of one bundled family, as asset paths relative to assets/fonts. */
+    public static List<String> bundledFaces(Context c, String family) {
+        List<String> out = new ArrayList<>();
+        try {
+            String[] files = c.getAssets().list("fonts/" + family);
+            if (files != null) for (String f : files) if (isFont(f)) out.add(family + "/" + f);
+        } catch (Exception ignored) { }
+        return out;
+    }
+
+    /** Variable fonts (…-VF.ttf) cover a range of weights in one file. */
+    public static boolean isVariable(String path) {
+        return displayName(path).endsWith("-VF");
+    }
+
     public static File addedDir(Context c) {
         File d = new File(c.getFilesDir(), "fonts");
         d.mkdirs();

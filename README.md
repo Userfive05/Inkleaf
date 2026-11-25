@@ -14,6 +14,7 @@ A minimal EPUB reader for the Onyx Boox Go 7.
 - **Sentence-aware pages** (on by default): each page ends at the end of a sentence, so no sentence is split across a page turn. Very long sentences, or ones that would leave a page less than half full, still break normally.
 - **Dictionary**: long-press a word. The panel takes at most a third of the screen, scrolls for long entries, and opens at the top instead of the bottom when it would cover the word.
 - **Fonts**: Book default, Serif, Sans-serif, any `.ttf/.otf/.woff/.woff2` added with *+ Add font files…* (several at once), and fonts found in `/sdcard/Fonts` or `/sdcard/koreader/fonts`. Files of one family (e.g. `Literata-Regular`, `-Bold`, `-Italic`, `-BoldItalic`) are grouped, so the book's bold and italic text uses the real styles.
+- **Built-in fonts**: Atkinson Hyperlegible, Bitter, Charis SIL, EB Garamond, Libron, Literata, Readerly (a Bookerly-style font), Source Serif 4 and Vollkorn, each with regular, bold and italic. All are under the SIL Open Font License and ship unmodified with their license files in `app/src/main/assets/fonts/`.
 - **Boldness**: Normal to +5, thickens the text with any font. **Italics**: as in the book, none, or all italic.
 - **Light**: swipe up or down along the left edge of the page. Allow "modify system settings" when asked so it drives the front light.
 - **Update**: checks this repo's latest GitHub Release and installs it. The button shows ● when a new build is out.

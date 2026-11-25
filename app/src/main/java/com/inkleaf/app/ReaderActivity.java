@@ -866,6 +866,7 @@ public class ReaderActivity extends Activity {
         if (f.equals("book")) return "Book default";
         if (f.equals("serif")) return "Serif";
         if (f.equals("sans")) return "Sans-serif";
+        if (f.startsWith(Fonts.BUNDLED)) return f.substring(Fonts.BUNDLED.length());
         return Fonts.familyName(f);
     }
 
@@ -948,6 +949,7 @@ public class ReaderActivity extends Activity {
         final List<String> values = new ArrayList<>();
         final List<String> names = new ArrayList<>();
         values.add("book"); values.add("serif"); values.add("sans");
+        for (String fam : Fonts.bundledFamilies(this)) values.add(Fonts.BUNDLED + fam);
         for (String v : values) names.add(fontName(v));
         for (java.util.Map.Entry<String, String> fam : Fonts.families(this).entrySet()) {
             values.add(fam.getKey());
@@ -1032,6 +1034,11 @@ public class ReaderActivity extends Activity {
                 return new WebResourceResponse("text/css", "utf-8", new ByteArrayInputStream(css().getBytes(StandardCharsets.UTF_8)));
             if (path.equals("__inkleaf/reader.js"))
                 return new WebResourceResponse("application/javascript", "utf-8", getAssets().open("reader.js"));
+            if (path.equals("__inkleaf/bundled-font")) {
+                String p = u.getQueryParameter("p");
+                if (p == null || p.contains("..") || !Fonts.isFont(p)) return notFound();
+                return new WebResourceResponse(mime(p), null, getAssets().open("fonts/" + p));
+            }
             if (path.equals("__inkleaf/font")) {
                 String p = u.getQueryParameter("p");
                 File f = p == null ? null : new File(p);
@@ -1080,6 +1087,15 @@ public class ReaderActivity extends Activity {
         String font = prefs.font();
         if (font.equals("serif")) family = "serif";
         else if (font.equals("sans")) family = "sans-serif";
+        else if (font.startsWith(Fonts.BUNDLED) && !Fonts.bundledFaces(this, font.substring(Fonts.BUNDLED.length())).isEmpty()) {
+            for (String face : Fonts.bundledFaces(this, font.substring(Fonts.BUNDLED.length()))) {
+                b.append("@font-face{font-family:\"InkLeafUser\";src:url(\"/__inkleaf/bundled-font?p=")
+                        .append(Uri.encode(face)).append("\");font-weight:")
+                        .append(Fonts.isVariable(face) ? "100 900" : String.valueOf(Fonts.weight(face)))
+                        .append(";font-style:").append(Fonts.isItalic(face) ? "italic" : "normal").append(";}\n");
+            }
+            family = "\"InkLeafUser\", serif";
+        }
         else if (!font.equals("book") && new File(font).isFile()) {
             List<File> faces = Fonts.familyOf(font);
             for (File face : faces) {
