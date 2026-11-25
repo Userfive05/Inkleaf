@@ -117,6 +117,8 @@ public class ReaderActivity extends Activity {
         ui.removeCallbacks(tick);
         // Leaving for the library forgets the book; going home or switching apps keeps it.
         if (key != null) prefs.reading(isFinishing() ? null : key);
+        Backup.autoBackup(this); // at most once a day
+
     }
 
     final Runnable tick = new Runnable() {

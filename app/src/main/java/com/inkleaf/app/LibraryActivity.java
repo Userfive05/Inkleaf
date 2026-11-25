@@ -55,6 +55,10 @@ public class LibraryActivity extends Activity {
         titles.addView(text(BuildConfig.VERSION_NAME, 13, 0xFF444444));
         bar.addView(titles, new LinearLayout.LayoutParams(0, -2, 1));
         bar.addView(button("Refresh", v -> refresh()));
+        bar.addView(button("Backup", v -> {
+            if (!hasAccess()) { requestAccess(); return; }
+            Backup.showMenu(this, new ArrayList<>(books), this::refresh);
+        }));
         updateButton = button("Update", v -> Updater.checkAndOffer(this));
         bar.addView(updateButton);
         root.addView(bar);
@@ -122,6 +126,13 @@ public class LibraryActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int req, int result, Intent data) {
+        super.onActivityResult(req, result, data);
+        if (req == Backup.REQ_RESTORE_FILE && result == RESULT_OK && data != null && data.getData() != null)
+            Backup.restoreFromUri(this, data.getData(), new ArrayList<>(books), this::refresh);
+    }
+
+    @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
         refresh();
     }
@@ -134,6 +145,7 @@ public class LibraryActivity extends Activity {
             message.setVisibility(View.VISIBLE);
             return;
         }
+        Backup.autoBackup(this);
         message.setText("Looking for books…");
         message.setVisibility(View.VISIBLE);
         new Thread(() -> {

@@ -17,6 +17,7 @@ A minimal EPUB reader for the Onyx Boox Go 7.
 - **Built-in fonts**: Atkinson Hyperlegible, Bitter, Charis SIL, EB Garamond, Libron, Literata, Readerly (a Bookerly-style font), Source Serif 4 and Vollkorn, each with regular, bold and italic. All are under the SIL Open Font License and ship unmodified with their license files in `app/src/main/assets/fonts/`.
 - **Boldness**: Normal to +5, thickens the text with any font. **Italics**: as in the book, none, or all italic.
 - **Light**: swipe up or down along the left edge of the page. Allow "modify system settings" when asked so it drives the front light.
+- **Backup & restore** (Library → Backup): saves settings, reading progress and bookmarks to `InkLeaf/Backups/`. An automatic backup (`inkleaf-auto.json`) is refreshed once a day. Restoring matches books by file name if they've moved, and saves the current data first so a restore can be undone.
 - **Update**: checks this repo's latest GitHub Release and installs it. The button shows ● when a new build is out.
 
 ## Install
