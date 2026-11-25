@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Environment;
+import android.util.Base64;
 import android.widget.Toast;
 
 import org.json.JSONArray;
@@ -39,6 +40,8 @@ public class Backup {
     static final String AUTO_NAME = "inkleaf-auto.json";
     static final String SAFETY_NAME = "inkleaf-before-restore.json";
     static final long DAY = 24L * 60 * 60 * 1000;
+    /** Added fonts beyond this total are left out, to keep backups a sensible size. */
+    static final long MAX_FONT_BYTES = 40L * 1024 * 1024;
     /** Per-book keys are "<prefix><absolute path>". */
     static final String[] BOOK_PREFIXES = {"ch:", "fr:", "pc:", "la:", "bm:"};
     /** Not worth carrying to another install. */
@@ -75,6 +78,18 @@ public class Backup {
         root.put("build", BuildConfig.VERSION_CODE);
         root.put("created", System.currentTimeMillis());
         root.put("prefs", values);
+        // Fonts added in the app live in its private storage, so they go into the backup itself.
+        JSONArray fonts = new JSONArray();
+        long total = 0;
+        for (File f : Fonts.added(c)) {
+            if (total + f.length() > MAX_FONT_BYTES) continue;
+            total += f.length();
+            JSONObject o = new JSONObject();
+            o.put("name", f.getName());
+            o.put("data", Base64.encodeToString(EpubBook.readAll(new java.io.FileInputStream(f)), Base64.NO_WRAP));
+            fonts.put(o);
+        }
+        root.put("fonts", fonts);
         return root;
     }
 
@@ -120,6 +135,19 @@ public class Backup {
         for (File f : books) byName.put(f.getName().toLowerCase(Locale.ROOT), f);
 
         write(c, SAFETY_NAME); // so a mistaken restore can be undone
+
+        Set<String> fontNames = new HashSet<>();
+        JSONArray fonts = root.optJSONArray("fonts");
+        for (int i = 0; fonts != null && i < fonts.length(); i++) {
+            JSONObject o = fonts.getJSONObject(i);
+            String name = new File(o.getString("name")).getName(); // no paths from the file
+            if (!Fonts.isFont(name)) continue;
+            try (FileOutputStream out = new FileOutputStream(new File(Fonts.addedDir(c), name))) {
+                out.write(Base64.decode(o.getString("data"), Base64.DEFAULT));
+            }
+            fontNames.add(name);
+        }
+
         SharedPreferences.Editor ed = prefs(c).edit().clear();
         Set<String> matched = new HashSet<>();
         Iterator<String> keys = values.keys();
@@ -137,6 +165,14 @@ public class Backup {
                 }
                 if (new File(path).isFile()) matched.add(path);
                 target = pre + path;
+            }
+            // The chosen font may point at an added font from another install: point it at the restored copy.
+            if (key.equals("font") && "s".equals(t.optString("t"))) {
+                String name = new File(t.getString("v")).getName();
+                if (fontNames.contains(name) && !new File(t.getString("v")).isFile()) {
+                    ed.putString("font", new File(Fonts.addedDir(c), name).getAbsolutePath());
+                    continue;
+                }
             }
             switch (t.getString("t")) {
                 case "b": ed.putBoolean(target, t.getBoolean("v")); break;
@@ -164,7 +200,7 @@ public class Backup {
                         try {
                             File f = backupNow(a);
                             new AlertDialog.Builder(a).setTitle("Backed up")
-                                    .setMessage("Settings, reading progress and bookmarks were saved to\n\nInkLeaf/Backups/" + f.getName()
+                                    .setMessage("Settings, reading progress, bookmarks and added fonts were saved to\n\nInkLeaf/Backups/" + f.getName()
                                             + "\n\nCopy this file somewhere safe to keep it, for example to your computer or phone.")
                                     .setPositiveButton("OK", null).show();
                         } catch (Exception e) {
@@ -232,10 +268,13 @@ public class Backup {
                 }
             }
         }
+        JSONArray fontList = root.optJSONArray("fonts");
+        int fonts = fontList == null ? 0 : fontList.length();
         String when = new SimpleDateFormat("MMM d, yyyy  h:mm a", Locale.getDefault()).format(new Date(root.optLong("created")));
         new AlertDialog.Builder(a).setTitle("Restore this backup?")
                 .setMessage("From " + when + ": settings, progress for " + progress + (progress == 1 ? " book" : " books")
-                        + " and " + bookmarks + (bookmarks == 1 ? " bookmark" : " bookmarks")
+                        + ", " + bookmarks + (bookmarks == 1 ? " bookmark" : " bookmarks")
+                        + " and " + fonts + (fonts == 1 ? " added font file" : " added font files")
                         + ".\n\nThis replaces what InkLeaf has now. Your current data is saved first as \"Before last restore\", so you can undo.")
                 .setPositiveButton("Restore", (d, w) -> {
                     try {
